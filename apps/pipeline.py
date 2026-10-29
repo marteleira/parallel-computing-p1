@@ -14,6 +14,8 @@ from datetime import datetime
 from pyspark.sql import SparkSession
 
 import m1
+import m2
+import shared
 
 
 def main():
@@ -43,14 +45,13 @@ def main():
     if args.stats:
         m1.rule_stats(df)
     clean = m1.filter_invalid(df)
+    if args.write_clean:
+        _write(clean, args.output, "m1")
 
-    # Next modules (M2, ...) take "clean" from here
-
-    if args.output:
-        clean.write.mode("overwrite").parquet(args.output)
-        print(f"Wrote cleaned data to {args.output}")
-    elif not args.stats:
-        print(f"Valid records: {clean.count():,}")
+    # M2 —> temporal demand
+    zones = shared.load_zones(spark, args.zones)
+    demand = m2.temporal_demand(clean, zones)
+    _write(demand, args.output, "m2", partition_by="pickup_borough")
 
     print(f"Wall time: {time.perf_counter() - start:.2f}s")
     spark.stop()
@@ -84,11 +85,26 @@ def _build_arg_parser():
     parser.add_argument("--seed", type=int, default=42, help="Seed for --fraction sampling")
     parser.add_argument("--partitions", type=int, default=None,
                         help="Repartition the loaded data to this many partitions")
-    parser.add_argument("--output", default=None,
-                        help="Write the cleaned data as Parquet to this path")
+    parser.add_argument("--output", default="/data/parallel-computing-p1/output",
+                        help="Base directory, each operation writes to <output>/<op>")
+    parser.add_argument("--zones", default="/data/parallel-computing-p1/taxi_zone_lookup.csv",
+                        help="Path to taxi_zone_lookup.csv")
     parser.add_argument("--stats", action="store_true",
                         help="Count how many records each rule rejects (one extra pass over the data)")
+    parser.add_argument("--write-clean", action="store_true",
+                        help="Also write the cleaned trips to <output>/m1 (large, off by default)")
     return parser
+
+
+def _write(df, output, op, partition_by=None):
+    """Write one operation's result to <output>/<op> and print how long it took."""
+    path = os.path.join(output, op)
+    start = time.perf_counter()
+    writer = df.write.mode("overwrite")
+    if partition_by:
+        writer = writer.partitionBy(partition_by)
+    writer.parquet(path)
+    print(f"{op} written to {path} in {time.perf_counter() - start:.2f}s")
 
 
 def _parse_range(spec, lo, hi, what):

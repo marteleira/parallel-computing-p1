@@ -16,7 +16,7 @@ Analytics with Spark, deadline 2026-11-06). Read this file fully before touching
 | Op | Status | What |
 |----|--------|------|
 | M1 | done   | ingestion, schema enforcement, invalid-record filtering, per-rule stats |
-| M2 | todo   | temporal demand per (pickup_borough, day_of_week, hour_of_day) |
+| M2 | done   | temporal demand per (pickup_borough, day_of_week, hour_of_day) |
 | M3 | todo   | zone/month stats + window functions |
 | O? | todo   | two optional ops, **not chosen yet — ask the user** |
 
@@ -32,7 +32,9 @@ apps/
     schema.py        # constants, schemas, rules (no logic)
     ingestion.py     # one file per responsibility
     cleaning.py
-data/                # dataset lives here, never committed (*.parquet is gitignored)
+  m2/                # aggregations.py: temporal_demand(clean, zones)
+  shared/            # code used by several ops (zones.py: load_zones)
+data/                # dataset + taxi_zone_lookup.csv, never committed; output/ = Spark results
 readme.md            # reproduction steps (required by the assignment)
 ```
 
@@ -116,11 +118,11 @@ No business logic in `pipeline.py`; no argparse or SparkSession creation inside 
 - **No hidden actions** inside module functions (`count`, `collect`, `show`, `first`,
   `toPandas`). Actions happen in `pipeline.py` (the write) or behind an explicit flag like
   `--stats`. Hidden actions distort the profiling.
-- Each operation ends in **one write** to Parquet. Turn `--output` into a base directory when
-  adding M2: cleaned data → `<output>/m1`, M2 → `<output>/m2`, etc. (M2 partitioned by
-  `pickup_borough`, as the assignment requires).
-- Print the elapsed time per operation in `pipeline.py` (same style as the existing
-  `Wall time:` line), so the baseline has numbers per op.
+- Each operation ends in **one write** to Parquet through `_write(df, args.output, "<op>")`
+  in `pipeline.py`, which lands in `<output>/<op>` and prints the elapsed time of that write
+  (= that op's time, since everything before it is lazy). M2 is partitioned by `pickup_borough`.
+- The cleaned trips (`<output>/m1`) are only written with `--write-clean`: not required by the
+  assignment and large, so they would dominate the baseline.
 - Derived columns are computed once and named clearly (`hour_of_day`, `day_of_week`,
   `trip_minutes`, `month`), with `spark.sql.session.timeZone = UTC` already set.
 - Zone lookup: `data/taxi_zone_lookup.csv`

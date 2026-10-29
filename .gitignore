@@ -1,3 +1,6 @@
 *.parquet
 *.crc
 .idea/*
+data/output/
+__pycache__/
+data/*.csv

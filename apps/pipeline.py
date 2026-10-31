@@ -15,6 +15,7 @@ from pyspark.sql import SparkSession
 
 import m1
 import m2
+import m3
 import shared
 
 
@@ -52,6 +53,11 @@ def main():
     zones = shared.load_zones(spark, args.zones)
     demand = m2.temporal_demand(clean, zones)
     _write(demand, args.output, "m2", partition_by="pickup_borough")
+
+    # M3 —> zone/month statistics + window functions
+    zone_stats = m3.zone_month_stats(clean, zones)
+    zone_stats = m3.zone_windows(zone_stats)
+    _write(zone_stats, args.output, "m3")
 
     print(f"Wall time: {time.perf_counter() - start:.2f}s")
     spark.stop()

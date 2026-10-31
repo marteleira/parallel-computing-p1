@@ -5,6 +5,7 @@ Shared taxi zone lookup loader
 -------------------------
 """
 
+import pyspark.sql.functions as sf
 from pyspark.sql.types import IntegerType, StringType, StructField, StructType
 
 # Explicit schema, inferSchema would cost an extra job over the CSV
@@ -19,3 +20,12 @@ ZONES_SCHEMA = StructType([
 def load_zones(spark, path):
     """Read taxi_zone_lookup.csv (LocationID -> Borough, Zone, service_zone)."""
     return spark.read.csv(path, header=True, schema=ZONES_SCHEMA)
+
+
+def pickup_zones(zones):
+    """Zone lookup rename to do a join on the pickup side (PULocationID)"""
+    return zones.select(
+        sf.col("LocationID").alias("PULocationID"),
+        sf.col("Borough").alias("pickup_borough"),
+        sf.col("Zone").alias("pickup_zone"),
+    )

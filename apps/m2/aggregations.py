@@ -7,15 +7,13 @@ M2 temporal demand aggregation
 
 import pyspark.sql.functions as sf
 
+import shared
+
 
 def temporal_demand(df, zones):
     """Return trip demand aggregated by pickup borough, weekday and hour."""
-    pickup_zones = zones.select(
-        sf.col("LocationID").alias("PULocationID"),
-        sf.col("Borough").alias("pickup_borough"),
-    )
     #dayofweek: 1 = Sunday,  2 = Monday... etc
-    enriched = (df.join(pickup_zones, on="PULocationID", how="inner")
+    enriched = (df.join(shared.pickup_zones(zones), on="PULocationID", how="inner")
                 .withColumn("day_of_week", sf.dayofweek("tpep_pickup_datetime"))
                 .withColumn("hour_of_day", sf.hour("tpep_pickup_datetime"))
                 .withColumn(

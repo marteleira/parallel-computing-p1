@@ -16,6 +16,7 @@ from pyspark.sql import SparkSession
 import m1
 import m2
 import m3
+import o1
 import shared
 
 
@@ -58,6 +59,11 @@ def main():
     zone_stats = m3.zone_month_stats(clean, zones)
     zone_stats = m3.zone_windows(zone_stats)
     _write(zone_stats, args.output, "m3")
+
+    # O1 —> fare anomalies per pickup zones and hours
+    flagged = o1.flag_fare_anomalies(clean)
+    anomalies = o1.anomaly_summary(flagged, zones)
+    _write(anomalies, args.output, "o1")
 
     print(f"Wall time: {time.perf_counter() - start:.2f}s")
     spark.stop()

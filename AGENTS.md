@@ -17,8 +17,9 @@ Analytics with Spark, deadline 2026-11-06). Read this file fully before touching
 |----|--------|------|
 | M1 | done   | ingestion, schema enforcement, invalid-record filtering, per-rule stats |
 | M2 | done   | temporal demand per (pickup_borough, day_of_week, hour_of_day) |
-| M3 | todo   | zone/month stats + window functions |
-| O? | todo   | two optional ops, **not chosen yet — ask the user** |
+| M3 | done   | zone/month stats + window functions |
+| O1 | done   | fare-per-mile anomalies per (zone, hour), rates weekday vs weekend |
+| O? | todo   | second optional op, **not chosen yet — ask the user** |
 
 Work on one operation at a time, in that order, unless told otherwise.
 

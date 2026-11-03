@@ -17,6 +17,7 @@ import m1
 import m2
 import m3
 import o1
+import o3
 import o4
 import shared
 
@@ -70,6 +71,11 @@ def main():
     typed = o4.classify_trips(clean)
     type_stats = o4.zone_type_stats(typed)
     _write(type_stats, args.output, "o4")
+
+    # O3 —> demand forecasting features (4-week lag as a self-join)
+    counts = o3.hourly_counts(clean)
+    features = o3.demand_features(counts, zones)
+    _write(features, args.output, "o3")
 
     print(f"Wall time: {time.perf_counter() - start:.2f}s")
     spark.stop()

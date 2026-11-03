@@ -28,4 +28,5 @@ def pickup_zones(zones):
         sf.col("LocationID").alias("PULocationID"),
         sf.col("Borough").alias("pickup_borough"),
         sf.col("Zone").alias("pickup_zone"),
+        sf.col("service_zone").alias("pickup_service_zone"),
     )

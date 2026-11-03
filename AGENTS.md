@@ -20,7 +20,7 @@ Analytics with Spark, deadline 2026-11-06). Read this file fully before touching
 | M3 | done   | zone/month stats + window functions |
 | O1 | done   | fare-per-mile anomalies per (zone, hour), rates weekday vs weekend |
 | O4 | done   | trip-type fractions per (zone, hour), zone type, stats per zone type/month |
-| O3 | todo   | demand features, 4-week lag self-join (after O4) |
+| O3 | done   | hourly counts per (zone, date, hour), bucket mean/variance, 4-week lag self-join, demand index |
 
 Work on one operation at a time, in that order, unless told otherwise.
 

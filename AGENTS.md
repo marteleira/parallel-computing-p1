@@ -19,7 +19,8 @@ Analytics with Spark, deadline 2026-11-06). Read this file fully before touching
 | M2 | done   | temporal demand per (pickup_borough, day_of_week, hour_of_day) |
 | M3 | done   | zone/month stats + window functions |
 | O1 | done   | fare-per-mile anomalies per (zone, hour), rates weekday vs weekend |
-| O? | todo   | second optional op, **not chosen yet — ask the user** |
+| O4 | done   | trip-type fractions per (zone, hour), zone type, stats per zone type/month |
+| O3 | todo   | demand features, 4-week lag self-join (after O4) |
 
 Work on one operation at a time, in that order, unless told otherwise.
 

@@ -17,6 +17,7 @@ import m1
 import m2
 import m3
 import o1
+import o4
 import shared
 
 
@@ -64,6 +65,11 @@ def main():
     flagged = o1.flag_fare_anomalies(clean)
     anomalies = o1.anomaly_summary(flagged, zones)
     _write(anomalies, args.output, "o1")
+
+    # O4 —> trip-type classification per pickup zone and hour
+    typed = o4.classify_trips(clean)
+    type_stats = o4.zone_type_stats(typed)
+    _write(type_stats, args.output, "o4")
 
     print(f"Wall time: {time.perf_counter() - start:.2f}s")
     spark.stop()

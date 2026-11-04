@@ -1,0 +1,254 @@
+#LyX file created by tex2lyx 2.5
+\lyxformat 643
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin /home/marteleira/Downloads/CompPar/report/report/
+\textclass acmart
+\begin_preamble
+\settopmatter{printacmref=false, printccs=false, printfolios=true}
+\renewcommand{\footnotetextcopyrightpermission}[1]{}
+
+
+\usepackage{booktabs}% For formal tables
+
+
+
+
+
+\end_preamble
+\options sigconf
+\use_default_options false
+\maintain_unincluded_children no
+\language english
+\language_package none
+\inputencoding utf8
+\fontencoding default
+\font_roman "default" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_roman_osf false
+\font_sans_osf false
+\font_typewriter_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\use_microtype false
+\use_dash_ligatures true
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\spacing single
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_package amsmath 1
+\use_package amssymb 0
+\use_package cancel 0
+\use_package esint 1
+\use_package mathdots 0
+\use_package mathtools 0
+\use_package mhchem 0
+\use_package stackrel 0
+\use_package stmaryrd 0
+\use_package undertilde 0
+\cite_engine natbib
+\cite_engine_type default
+\biblio_style plain
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification true
+\crossref_package prettyref
+\use_minted 0
+\use_lineno false
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\is_math_indent 0
+\math_numbering_side default
+\quotes_style english
+\dynamic_quotes 0
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\change_bars false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\docbook_table_output 0
+\docbook_mathml_prefix 1
+\docbook_mathml_version 0
+\end_header
+
+\begin_body
+
+\begin_layout Title
+SIG Proceedings Paper in LaTeX Format
+\end_layout
+
+\begin_layout Author
+Firstname Lastname
+\end_layout
+
+\begin_layout Email
+email@domain.com
+\end_layout
+
+\begin_layout Author
+Firstname Lastname
+\end_layout
+
+\begin_layout Email
+email@domain.com
+\end_layout
+
+\begin_layout Abstract
+This paper provides a sample of a \SpecialChar LaTeX
+
+\begin_inset space \space{}
+
+\end_inset
+
+document which conforms, somewhat loosely, to the formatting guidelines for ACM SIG Proceedings.
+\begin_inset Foot
+status collapsed
+
+
+\begin_layout Standard
+This is an abstract footnote
+\end_layout
+
+\end_inset
+
+ 
+\end_layout
+
+\begin_layout Standard
+
+\begin_inset ERT
+status collapsed
+
+\begin_layout Plain Layout
+% We no longer use 
+\backslash
+terms command
+\end_layout
+
+\begin_layout Plain Layout
+%
+\backslash
+terms{Theory}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Keywords
+ACM proceedings
+\end_layout
+
+\begin_layout Section
+Section
+\end_layout
+
+\begin_layout Standard
+Refer to 
+\begin_inset ERT
+status collapsed
+
+\begin_layout Plain Layout
+
+\backslash
+verb|acmart.pdf|
+\end_layout
+
+\end_inset
+
+ 
+\begin_inset CommandInset citation
+LatexCommand citet
+after ""
+before ""
+key "veytsmanlatex"
+literal "false"
+
+\end_inset
+
+ (
+\begin_inset Flex URL
+status collapsed
+
+\begin_layout Plain Layout
+https://www.ctan.org/pkg/acmart
+\end_layout
+
+\end_inset
+
+, 
+\begin_inset Flex URL
+status collapsed
+
+\begin_layout Plain Layout
+http://www.acm.org/publications/proceedings-template
+\end_layout
+
+\end_inset
+
+) for additional examples and instructions.
+\end_layout
+
+\begin_layout Subsection
+Subsection
+\end_layout
+
+\begin_layout Standard
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed aliquam nisl turpis, sit amet mollis leo accumsan vel. Donec semper turpis dui, a porttitor lorem tincidunt id. Phasellus gravida, purus non faucibus euismod, lectus tortor maximus elit, vestibulum lobortis purus turpis non urna. Fusce feugiat lectus ut massa molestie, non interdum augue porta. Nunc dapibus odio nec neque cursus, ut lacinia velit rutrum. Duis tempor nulla velit, sed pellentesque nunc imperdiet ut. Phasellus eget hendrerit neque. Suspendisse aliquet nulla id sem aliquam aliquam sed a orci. Duis sem est, hendrerit nec porttitor sit amet, maximus sed nulla. Suspendisse et dictum massa. Morbi non diam nec orci sodales eleifend. Etiam eget finibus purus, a malesuada ipsum. Nullam ac nisi nec elit faucibus aliquet. Nulla feugiat velit sed sodales eleifend. Donec orci nulla, viverra et mi in, sagittis egestas urna.
+\end_layout
+
+\begin_layout Subsubsection
+Subsubsection
+\end_layout
+
+\begin_layout Standard
+Integer eleifend quam et odio iaculis, at elementum augue aliquam. Ut eu nibh nec urna finibus semper fermentum id purus. Aliquam eu sollicitudin libero. Cras viverra elit congue erat pulvinar, vitae vehicula tortor interdum. Aliquam commodo mi sapien, ullamcorper egestas velit tempor nec. Quisque sapien velit, fringilla non vulputate nec, lacinia in dui. Nam vestibulum volutpat ante, eu sodales enim tincidunt vel. Ut mollis elit quis bibendum eleifend. In laoreet tortor non odio ultrices mollis. Curabitur volutpat et risus quis fermentum. Morbi laoreet ligula eget orci consectetur, in dictum ipsum efficitur. Mauris nec neque ultricies, efficitur elit id, hendrerit nibh. Interdum et malesuada fames ac ante ipsum primis in faucibus.
+\end_layout
+
+\begin_layout Paragraph
+Paragraph
+\end_layout
+
+\begin_layout Standard
+Nulla scelerisque id lectus a luctus. Curabitur quis dolor maximus, maximus erat ut, placerat justo. Donec auctor purus a lacus molestie maximus. Etiam porta ligula a quam mollis efficitur. Quisque vel sapien iaculis, pellentesque lorem nec, hendrerit lectus. Vestibulum egestas congue euismod. Praesent a tristique massa. Aliquam eget ante elit. Phasellus eget metus mi. Fusce nec rutrum mi. Pellentesque eu congue mi. Fusce eu ullamcorper est.
+\end_layout
+
+\begin_layout Standard
+ 
+\begin_inset CommandInset bibtex
+LatexCommand bibtex
+bibfiles "refs"
+options "acm"
+
+\end_inset
+
+
+\end_layout
+
+\end_body
+\end_document

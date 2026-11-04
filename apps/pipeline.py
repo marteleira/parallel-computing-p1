@@ -50,32 +50,32 @@ def main():
         m1.rule_stats(df)
     clean = m1.filter_invalid(df)
     if args.write_clean:
-        _write(clean, args.output, "m1")
+        _write(clean, args.output, "m1", explain=args.explain)
 
     # M2 —> temporal demand
     zones = shared.load_zones(spark, args.zones)
     demand = m2.temporal_demand(clean, zones)
-    _write(demand, args.output, "m2", partition_by="pickup_borough")
+    _write(demand, args.output, "m2", partition_by="pickup_borough", explain=args.explain)
 
     # M3 —> zone/month statistics + window functions
     zone_stats = m3.zone_month_stats(clean, zones)
     zone_stats = m3.zone_windows(zone_stats)
-    _write(zone_stats, args.output, "m3")
+    _write(zone_stats, args.output, "m3", explain=args.explain)
 
     # O1 —> fare anomalies per pickup zones and hours
     flagged = o1.flag_fare_anomalies(clean)
     anomalies = o1.anomaly_summary(flagged, zones)
-    _write(anomalies, args.output, "o1")
+    _write(anomalies, args.output, "o1", explain=args.explain)
 
     # O4 —> trip-type classification per pickup zone and hour
     typed = o4.classify_trips(clean)
     type_stats = o4.zone_type_stats(typed)
-    _write(type_stats, args.output, "o4")
+    _write(type_stats, args.output, "o4", explain=args.explain)
 
     # O3 —> demand forecasting features (4-week lag as a self-join)
     counts = o3.hourly_counts(clean)
     features = o3.demand_features(counts, zones)
-    _write(features, args.output, "o3")
+    _write(features, args.output, "o3", explain=args.explain)
 
     print(f"Wall time: {time.perf_counter() - start:.2f}s")
     spark.stop()
@@ -117,12 +117,17 @@ def _build_arg_parser():
                         help="Count how many records each rule rejects (one extra pass over the data)")
     parser.add_argument("--write-clean", action="store_true",
                         help="Also write the cleaned trips to <output>/m1 (large, off by default)")
+    parser.add_argument("--explain", action="store_true",
+                        help="Print the physical plan of each operation before writing it")
     return parser
 
 
-def _write(df, output, op, partition_by=None):
+def _write(df, output, op, partition_by=None, explain=False):
     """Write one operation's result to <output>/<op> and print how long it took."""
     path = os.path.join(output, op)
+    if explain:
+        print(f"\n===== {op} physical plan =====")
+        df.explain(mode="formatted")
     start = time.perf_counter()
     writer = df.write.mode("overwrite")
     if partition_by:

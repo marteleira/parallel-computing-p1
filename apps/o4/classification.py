@@ -28,7 +28,7 @@ def classify_trips(df, thresholds=ZONE_TYPE_THRESHOLDS):
                .withColumn("zone_type", _zone_type(thresholds)))
 
     # every trip has a bucket (built from the same trips), so the inner join drops nothing
-    return trips.join(buckets, on=["PULocationID", "hour_of_day"], how="inner")
+    return trips.join(sf.broadcast(buckets), on=["PULocationID", "hour_of_day"], how="inner")
 
 
 def _zone_type(thresholds):

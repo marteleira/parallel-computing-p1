@@ -11,6 +11,7 @@ import sys
 import time
 from datetime import datetime
 
+from pyspark import StorageLevel
 from pyspark.sql import SparkSession
 
 import m1
@@ -48,7 +49,10 @@ def main():
         df = df.repartition(args.partitions)
     if args.stats:
         m1.rule_stats(df)
-    clean = m1.filter_invalid(df)
+
+    #This one is recalculated 9 times (M2 1, M3 1, O1 2, O4 2 e O3 3)
+    clean = m1.filter_invalid(df).persist(StorageLevel.MEMORY_AND_DISK)
+
     if args.write_clean:
         _write(clean, args.output, "m1", explain=args.explain)
 
@@ -76,6 +80,9 @@ def main():
     counts = o3.hourly_counts(clean)
     features = o3.demand_features(counts, zones)
     _write(features, args.output, "o3", explain=args.explain)
+
+    #Clean thigs
+    clean.unpersist()
 
     print(f"Wall time: {time.perf_counter() - start:.2f}s")
     spark.stop()

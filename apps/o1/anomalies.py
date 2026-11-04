@@ -23,7 +23,7 @@ def flag_fare_anomalies(df):
     )
 
     # stats joined back in every trip, null when the (zone, hour) has a only one trip
-    return (trips.join(baseline, on=["PULocationID", "hour_of_day"], how="inner")
+    return (trips.join(sf.broadcast(baseline), on=["PULocationID", "hour_of_day"], how="inner")
             .withColumn("is_fare_anomaly",
                         sf.col("fare_per_mile") > sf.col("mean_fare_per_mile")
                         + ANOMALY_STDDEVS * sf.col("stddev_fare_per_mile")))

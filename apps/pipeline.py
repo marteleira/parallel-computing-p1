@@ -100,14 +100,8 @@ def _create_spark():
              .config("spark.hadoop.fs.permissions.umask-mode", "000")
              .config("spark.ui.showConsoleProgress", "false")
 
-             # The Catalyst optimiser builds the entire execution plan before seeing any data. It assumes uniform partition sizes and balanced joins. In reality the NYC Taxi dataset has strong skew (Manhattan produces ≈60 % of all trips) and the optimal number of post-shuffle partitions differs by stage.
-             #To handle such skew we may leerage Adaptive Query Execution (AQE), which re-plans each stage at runtime after inspecting the actual size of shuffle map outputs.
-             .config("spark.sql.adaptive.enabled", "true")
-             .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-             .config("spark.sql.adaptive.skewJoin.enabled", "true")
-             .config("spark.sql.adaptive.localShuffleReader.enabled", "true")
-
-             #aggregate,
+             # AQE (with coalescing, skew join, local shuffle reader) is already on by default
+             # in Spark 4; this lets it also re-plan the partitioning of cached plans
              .config("spark.sql.optimizer.canChangeCachedPlanOutputPartitioning", "true")
              .getOrCreate())
     spark.sparkContext.setLogLevel("WARN")

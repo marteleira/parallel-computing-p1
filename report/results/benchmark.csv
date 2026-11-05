@@ -1,2 +1,6 @@
-label,commit,run,workers,years,fraction,m2_s,m3_s,o1_s,o4_s,o3_s,wall_s,app_id,date
-baseline,ccbb59f,1,2,2019,1.0,58.17,58.33,103.69,95.88,92.93,425.58,app-20261105183936-0001,2026-11-05T18:46:52+00:00
+label,commit,run,workers,executor_memory,years,fraction,m2_s,m3_s,o1_s,o4_s,o3_s,wall_s,app_id,date
+baseline-1g,ccbb59f,1,2,1g,2019,1.0,58.17,58.33,103.69,95.88,92.93,425.58,app-20261105183936-0001,2026-11-05T18:46:52+00:00
+baseline-1g,ccbb59f,2,2,1g,2019,1.0,63.22,57.02,109.96,94.22,73.37,412.50,app-20261105185726-0002,2026-11-05T19:04:29+00:00
+cache-broadcast-1g,ae130c0,1,2,1g,2019,1.0,,,,,,FAILED:OutOfMemoryError,app-20261105190448-0003,2026-11-05T19:08:41+00:00
+columns-windows-o3-1g,d7ba9ba,1,2,1g,2019,1.0,,,,,,FAILED:OutOfMemoryError,app-20261105190949-0004,2026-11-05T19:17:54+00:00
+m3-aggregate-first-1g,15f07dd,1,2,1g,2019,1.0,,,,,,FAILED:OutOfMemoryError,app-20261105191814-0005,2026-11-05T19:23:36+00:00

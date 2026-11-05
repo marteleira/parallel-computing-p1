@@ -4,8 +4,8 @@
 # Runs the pipeline of one git commit on the Docker cluster and appends its timings to a CSV
 # -------------------------
 #
-# usage: bench/benchmark.sh <commit> <label> [runs] [workers] [years] [fraction]
-#   e.g. bench/benchmark.sh ccbb59f baseline 2 2 2019 1.0
+# usage: bench/benchmark.sh <commit> <label> [runs] [workers] [years] [fraction] [executor_mem]
+#   e.g. bench/benchmark.sh ccbb59f baseline 2 2 2019 1.0 2g
 #
 # The code of <commit> is exported to data/bench-code/<label>, so the working tree is never
 # checked out. Spark event logs go to data/spark-events (open them with the History Server).
@@ -17,6 +17,7 @@ RUNS=${3:-1}
 WORKERS=${4:-2}
 YEARS=${5:-2019}
 FRACTION=${6:-1.0}
+EXECUTOR_MEMORY=${7:-2g}   # the 1g default runs out of heap once the clean trips are cached
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 COMMIT=$(git -C "$REPO" rev-parse --short "$1")
@@ -30,7 +31,7 @@ rm -rf "$CODE_DIR" && mkdir -p "$CODE_DIR" "$REPO/data/spark-events" "$(dirname 
 git -C "$REPO" archive "$COMMIT" apps | tar -x -C "$CODE_DIR" --strip-components=1
 
 if [ ! -f "$RESULTS" ]; then
-    echo "label,commit,run,workers,years,fraction,m2_s,m3_s,o1_s,o4_s,o3_s,wall_s,app_id,date" \
+    echo "label,commit,run,workers,executor_memory,years,fraction,m2_s,m3_s,o1_s,o4_s,o3_s,wall_s,app_id,date" \
         > "$RESULTS"
 fi
 
@@ -38,8 +39,11 @@ cd "$COMPOSE_DIR"
 docker compose up -d --scale spark-worker="$WORKERS" > /dev/null 2>&1
 sleep 10   # let the workers register with the master
 
-for run in $(seq 1 "$RUNS"); do
-    echo "== $LABEL ($COMMIT) run $run/$RUNS, $WORKERS workers, years=$YEARS fraction=$FRACTION"
+# run numbers continue after the runs already in the CSV for this label
+done_runs=$(grep -c "^$LABEL," "$RESULTS" || true)
+
+for run in $(seq $((done_runs + 1)) $((done_runs + RUNS))); do
+    echo "== $LABEL ($COMMIT) run $run, $WORKERS workers x $EXECUTOR_MEMORY, years=$YEARS fraction=$FRACTION"
     log="$REPO/data/bench-code/$LABEL-run$run.log"
 
     # git bash on windows would otherwise rewrite the /data/... container paths
@@ -47,20 +51,26 @@ for run in $(seq 1 "$RUNS"); do
         --master spark://spark-master:7077 \
         --conf spark.eventLog.enabled=true \
         --conf spark.eventLog.dir=file://$CONTAINER_DATA/spark-events \
+        --executor-memory "$EXECUTOR_MEMORY" \
         --conf spark.app.name="$LABEL-run$run" \
         "$CONTAINER_DATA/bench-code/$LABEL/pipeline.py" \
-        --data "$CONTAINER_DATA" --years "$YEARS" --fraction "$FRACTION" > "$log" 2>&1
+        --data "$CONTAINER_DATA" --years "$YEARS" --fraction "$FRACTION" > "$log" 2>&1 || true
 
     # "m2 written to ... in 15.34s" and "Wall time: 61.51s" are printed by pipeline._write/main
     op_time() { grep -oP "^$1 written to .* in \K[0-9.]+" "$log" || echo ""; }
     wall=$(grep -oP "^Wall time: \K[0-9.]+" "$log" || echo "")
     app_id=$(grep -oP "app ID \Kapp-[0-9-]+" "$log" | head -1 || echo "")
 
+    # a failed run is a result too (e.g. an OOM), so it is kept in the CSV
     if [ -z "$wall" ]; then
-        echo "   FAILED, see $log"
+        error=$(grep -oE "OutOfMemoryError|ExecutorLostFailure|Exception" "$log" | head -1 || true)
+        echo "$LABEL,$COMMIT,$run,$WORKERS,$EXECUTOR_MEMORY,$YEARS,$FRACTION,$(op_time m2),$(op_time m3)," \
+             "$(op_time o1),$(op_time o4),$(op_time o3),FAILED:${error:-unknown},$app_id," \
+             "$(date -Iseconds)" | tr -d ' ' >> "$RESULTS"
+        echo "   FAILED (${error:-unknown}), see $log"
         continue
     fi
-    echo "$LABEL,$COMMIT,$run,$WORKERS,$YEARS,$FRACTION,$(op_time m2),$(op_time m3),$(op_time o1)," \
+    echo "$LABEL,$COMMIT,$run,$WORKERS,$EXECUTOR_MEMORY,$YEARS,$FRACTION,$(op_time m2),$(op_time m3),$(op_time o1)," \
          "$(op_time o4),$(op_time o3),$wall,$app_id,$(date -Iseconds)" | tr -d ' ' >> "$RESULTS"
     echo "   wall time ${wall}s  (m2 $(op_time m2)s, m3 $(op_time m3)s, o1 $(op_time o1)s," \
          "o4 $(op_time o4)s, o3 $(op_time o3)s)"

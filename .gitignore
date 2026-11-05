@@ -4,3 +4,5 @@
 data/output/
 __pycache__/
 data/*.csv
+data/bench-code/
+data/spark-events/

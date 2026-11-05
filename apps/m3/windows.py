@@ -21,19 +21,20 @@ def zone_windows(stats):
 
     history = (-ROLLING_MONTHS, -1) #excludee the current month
 
+    # share one shuffle, and partitiones by pickup_borough (pickup_borough, month)
     return (stats
             .withColumn("month_index", sf.year("month") * 12 + sf.month("month"))
-            .withColumn("volume_rank", sf.rank().over(
-                Window.partitionBy("pickup_borough", "month").orderBy(sf.desc("trip_count"))))
-            .withColumn("rolling_trip_share",
-                        sf.sum("trip_count").over(zone_months.rangeBetween(*rolling))
-                        / sf.sum("trip_count").over(borough_months.rangeBetween(*rolling)))
+            .withColumn("rolling_zone_trips",
+                        sf.sum("trip_count").over(zone_months.rangeBetween(*rolling)))
             .withColumn("rolling_mean_trips",
                         sf.mean("trip_count").over(zone_months.rangeBetween(*history)))
             .withColumn("rolling_stddev_trips",
                         sf.stddev("trip_count").over(zone_months.rangeBetween(*history)))
+            .withColumn("rolling_trip_share", sf.col("rolling_zone_trips") / sf.sum("trip_count").over(borough_months.rangeBetween(*rolling)))
+            .withColumn("volume_rank", sf.rank().over(
+                Window.partitionBy("pickup_borough", "month").orderBy(sf.desc("trip_count"))))
             # null when there is not enough history (less than 2 months)
             .withColumn("volume_anomaly",
                         sf.abs(sf.col("trip_count") - sf.col("rolling_mean_trips"))
                         > DEVIATION_STDDEVS * sf.col("rolling_stddev_trips"))
-            .drop("month_index"))
+            .drop("month_index", "rolling_zone_trips"))

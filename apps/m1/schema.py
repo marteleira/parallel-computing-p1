@@ -35,6 +35,10 @@ CANONICAL_SCHEMA = StructType([
     StructField("cbd_congestion_fee", DoubleType()),
 ])
 
+#the only ones to keep in the cache
+ANALYSIS_COLUMNS = ["tpep_pickup_datetime", "tpep_dropoff_datetime", "passenger_count",
+                    "trip_distance", "RatecodeID", "PULocationID", "payment_type", "fare_amount"]
+
 # Surcharges that did not exist in earlier years, null means "not charged"
 ZERO_FILL_COLUMNS = ["extra", "mta_tax", "tip_amount", "tolls_amount",
                      "improvement_surcharge", "congestion_surcharge",

@@ -22,7 +22,7 @@ def demand_features(counts, zones):
 
     # left join: the first 4 weeks (or an empty slot 4 weeks before) have a null lag
     return (counts
-            .join(bucket_stats, on=BUCKET_COLUMNS, how="inner")
+            .join(sf.broadcast(bucket_stats), on=BUCKET_COLUMNS, how="inner") #small enought to be broadcasted
             .join(_lagged(counts), on=SLOT_COLUMNS, how="left")
             .withColumn("demand_index", sf.col("trip_count") / sf.col("mean_trip_count"))
             .withColumn("is_demand_spike", sf.col("demand_index") > DEMAND_INDEX_THRESHOLD)

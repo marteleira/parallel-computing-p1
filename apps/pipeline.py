@@ -50,11 +50,13 @@ def main():
     if args.stats:
         m1.rule_stats(df)
 
-    #This one is recalculated 9 times (M2 1, M3 1, O1 2, O4 2 e O3 3)
-    clean = m1.filter_invalid(df).persist(StorageLevel.MEMORY_AND_DISK)
-
+    clean = m1.filter_invalid(df)
     if args.write_clean:
         _write(clean, args.output, "m1", explain=args.explain)
+
+    #This one is recalculated 9 times (M2 1, M3 1, O1 2, O4 2 e O3 3)
+    #and only use the necessary colums
+    clean = clean.select(*m1.ANALYSIS_COLUMNS).persist(StorageLevel.MEMORY_AND_DISK)
 
     # M2 —> temporal demand
     zones = shared.load_zones(spark, args.zones)
@@ -77,11 +79,12 @@ def main():
     _write(type_stats, args.output, "o4", explain=args.explain)
 
     # O3 —> demand forecasting features (4-week lag as a self-join)
-    counts = o3.hourly_counts(clean)
+    counts = o3.hourly_counts(clean).persist(StorageLevel.MEMORY_AND_DISK) #is readed 3 times by demand_features (slots, bucket stats, 4-week lag)
     features = o3.demand_features(counts, zones)
     _write(features, args.output, "o3", explain=args.explain)
 
     #Clean thigs
+    counts.unpersist()
     clean.unpersist()
 
     print(f"Wall time: {time.perf_counter() - start:.2f}s")
@@ -96,6 +99,16 @@ def _create_spark():
              # Containers write as uid 185, keep the output deletable from the host.
              .config("spark.hadoop.fs.permissions.umask-mode", "000")
              .config("spark.ui.showConsoleProgress", "false")
+
+             # The Catalyst optimiser builds the entire execution plan before seeing any data. It assumes uniform partition sizes and balanced joins. In reality the NYC Taxi dataset has strong skew (Manhattan produces ≈60 % of all trips) and the optimal number of post-shuffle partitions differs by stage.
+             #To handle such skew we may leerage Adaptive Query Execution (AQE), which re-plans each stage at runtime after inspecting the actual size of shuffle map outputs.
+             .config("spark.sql.adaptive.enabled", "true")
+             .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+             .config("spark.sql.adaptive.skewJoin.enabled", "true")
+             .config("spark.sql.adaptive.localShuffleReader.enabled", "true")
+
+             #aggregate,
+             .config("spark.sql.optimizer.canChangeCachedPlanOutputPartitioning", "true")
              .getOrCreate())
     spark.sparkContext.setLogLevel("WARN")
     return spark

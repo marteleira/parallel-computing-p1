@@ -7,6 +7,7 @@ M1 — Data ingestion and cleaning
 
 from .cleaning import filter_invalid, rule_stats
 from .ingestion import discover_files, load
+from .schema import ANALYSIS_COLUMNS
 
 # Public API, everything else (and every "_name") is internal
-__all__ = ["discover_files", "load", "filter_invalid", "rule_stats"]
+__all__ = ["discover_files", "load", "filter_invalid", "rule_stats", "ANALYSIS_COLUMNS"]

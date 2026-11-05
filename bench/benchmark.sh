@@ -64,4 +64,6 @@ for run in $(seq 1 "$RUNS"); do
          "$(op_time o4),$(op_time o3),$wall,$app_id,$(date -Iseconds)" | tr -d ' ' >> "$RESULTS"
     echo "   wall time ${wall}s  (m2 $(op_time m2)s, m3 $(op_time m3)s, o1 $(op_time o1)s," \
          "o4 $(op_time o4)s, o3 $(op_time o3)s)"
+    # per-stage metrics (tasks, shuffle, spill, skew) from the event log -> stages.csv
+    python3 -I "$REPO/bench/stage_metrics.py" "$LABEL" "$app_id"
 done

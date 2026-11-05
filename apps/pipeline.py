@@ -99,10 +99,6 @@ def _create_spark():
              # Containers write as uid 185, keep the output deletable from the host.
              .config("spark.hadoop.fs.permissions.umask-mode", "000")
              .config("spark.ui.showConsoleProgress", "false")
-
-             # AQE (with coalescing, skew join, local shuffle reader) is already on by default
-             # in Spark 4; this lets it also re-plan the partitioning of cached plans
-             .config("spark.sql.optimizer.canChangeCachedPlanOutputPartitioning", "true")
              .getOrCreate())
     spark.sparkContext.setLogLevel("WARN")
     return spark

@@ -1,0 +1,17 @@
+% results-preview.tex -- compiles only sections/results.tex, to check how it looks.
+% The real report is template.tex: add \usepackage{pgfplots}, \pgfplotsset{compat=1.18}
+% to its preamble and \input{sections/results} where the results go.
+\documentclass[sigconf]{acmart}
+\usepackage{booktabs}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\settopmatter{printacmref=false}
+\setcopyright{none}
+\renewcommand\footnotetextcopyrightpermission[1]{}
+\pagestyle{plain}
+
+\begin{document}
+\title{Large-Scale Analytics with Spark: Results}
+\maketitle
+\input{sections/results}
+\end{document}

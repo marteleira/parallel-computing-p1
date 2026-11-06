@@ -16,10 +16,10 @@
 
 % TODO: confirm names, emails and affiliation
 \author{Miguel Lan\c{c}a}
-\email{TODO@domain.com}
+\email{METEOTEU@campus.fct.unl.pt}
 
 \author{Pedro Marteleira}
-\email{TODO@domain.com}
+\email{p211175@campus.fct.unl.pt}
 
 
 \begin{abstract}
@@ -62,7 +62,7 @@ Sections~\ref{sec:baseline} and~\ref{sec:optimisations} the profiling and the op
 Section~\ref{sec:analysis} the scalability analysis, and Section~\ref{sec:conclusion} concludes.
 
 
-\section{Pipeline Design}
+\section{Pipeline}
 \label{sec:design}
 
 This pipeline is organised as one Python package per operation, and a single entry point only
@@ -127,7 +127,7 @@ slightly overestimated.
 
 \input{sections/results}
 
-\section{Conclusion}
+\section{Discussion}
 \label{sec:conclusion}
 
 The pipeline produces all the required outputs over a year of data in 199\,s, against 342\,s for
@@ -142,8 +142,22 @@ measured.
 As future work, the same experiments should be repeated on a real cluster and over the
 full dataset period, where the scan stage would be no longer be limited by the shared CPU cores.
 
+\clearpage
 
 \bibliographystyle{acm}
 \bibliography{refs}
+
+\section*{Acknowledgements}
+% TODO: colleagues who helped, AI tools used and how they were used (required)
+This work was done in the context of the course \emph{Parallel Computing} 
+at NOVA FCT, we used of AI tools, specifically Github Copilot and Claude Sonneta, 
+which assisted in code generation, help with optimization and report writing.
+
+\section*{Individual Contributions}
+
+Both members worked on different phases of the project, namely the implementation of the
+operations, the profiling and optimisation of the pipeline, the scalability measurements and the
+writing of this report, the work division can be considered equally:
+Miguel Lan\c{c}a (50\%) and Pedro Marteleira (50\%)
 
 \end{document}

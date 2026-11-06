@@ -1,0 +1,35 @@
+# Spark standalone cluster for parallel-computing-p1 (based on the lab01 setup).
+# Workers get 2 cores / 3G; executors use 2g (--executor-memory 2g, see readme.md).
+# The Docker VM had 12 GB (%USERPROFILE%/.wslconfig: [wsl2] memory=12GB) to fit 3 workers.
+# Start with: docker compose up -d --scale spark-worker=2
+
+services:
+
+  spark-master:
+    image: spark:python3
+    container_name: spark-master
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.master.Master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+      - "4040:4040"
+    # the driver runs here (spark-submit from this container), so it needs the code and data
+    volumes:
+      - ../apps:/apps/parallel-computing-p1
+      - ../data:/data/parallel-computing-p1
+
+  spark-worker:
+    image: spark:python3
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077
+      --cores 2
+      --memory 3G
+    depends_on:
+      - spark-master
+    volumes:
+      - ../apps:/apps/parallel-computing-p1
+      - ../data:/data/parallel-computing-p1

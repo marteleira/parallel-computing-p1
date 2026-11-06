@@ -21,7 +21,7 @@ EXECUTOR_MEMORY=${7:-2g}   # the 1g default runs out of heap once the clean trip
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 COMMIT=$(git -C "$REPO" rev-parse --short "$1")
-COMPOSE_DIR="$REPO/../docker-spark-env"
+COMPOSE_DIR="$REPO/docker"
 RESULTS="$REPO/report/results/benchmark.csv"
 CONTAINER_DATA=/data/parallel-computing-p1
 

@@ -1,0 +1,245 @@
+% results.tex -- Profiling and Baseline, Optimisation Study, Analysis
+% Every number comes from report/results/benchmark.csv and stages.csv (bench/benchmark.sh).
+% Times are medians of 3 interleaved runs unless stated otherwise.
+% Needs \usepackage{booktabs} and \usepackage{pgfplots} (\pgfplotsset{compat=1.18}) in the preamble.
+
+\section{Profiling and Baseline}
+\label{sec:baseline}
+
+\paragraph{Setup.}
+No DI cluster was available, so every experiment ran on one laptop (Intel i5-8365U,
+4 cores / 8 threads, 16\,GB RAM, Windows~11) with a Spark~4.2.0 standalone cluster in Docker
+(WSL2, Java~21): one master and two workers with 2 cores each, i.e.\ 4 task slots.
+The input is the full year 2019 (12 files, 1.2\,GB of Parquet, 84.6\,M records), as allowed by
+the assignment when no cluster is available. Each executor gets 2\,GB
+(\texttt{--executor-memory 2g}, see Section~\ref{sec:opt-memory}); the only other non-default
+setting is \texttt{spark.sql.optimizer.canChangeCachedPlanOutputPartitioning=true}
+(Section~\ref{sec:opt-cachedaqe}). Every operation ends in one Parquet write, so the time of that
+write is the time of the operation. Stage metrics (tasks, shuffle bytes, spill, task-time
+skew) are extracted from the Spark event log of every run. Versions are measured in
+interleaved rounds (A, B, C, A, B, C, \dots) on mains power with the \emph{best performance}
+power mode; the run-to-run spread of the wall time is up to $\pm$10\% (laptop thermals), so
+smaller differences are not claimed as gains.
+
+\paragraph{Baseline.}
+The baseline completes in \textbf{341.7\,s} (median, runs from 314.2 to 370.7\,s);
+Table~\ref{tab:baseline} breaks it down per operation.
+
+\begin{table}[h]
+  \caption{Baseline per operation (2019, 2 workers, median of 3 runs).}
+  \label{tab:baseline}
+  \small
+  \begin{tabular}{lrrrr}
+    \toprule
+    Op & Time (s) & Tasks & Records read (M) & Shuffle write (MB) \\
+    \midrule
+    M2 & 45.1 & 14 & 84.6 & 0.7 \\
+    M3 & 40.3 & 18 & 84.6 & 1.4 \\
+    O1 & 85.1 & 53 & 169.2 & 1{,}320.9 \\
+    O4 & 83.1 & 38 & 169.2 & 1{,}284.8 \\
+    O3 & 76.4 & 48 & 169.2 & 98.9 \\
+    \midrule
+    Total & 341.7 & 184 & 676.8 & 2{,}707 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The event logs and plans point to three bottlenecks:
+\begin{enumerate}
+  \item \textbf{Recomputation.} Nothing is cached, so the Parquet scan and the cleaning
+    filter run 8 times (once in M2 and M3, twice in O1, O4 and O3): 676.8\,M records are read
+    for an 84.6\,M-record input.
+  \item \textbf{Shuffling the whole trip table.} O1 and O4 join every trip back to a
+    $\sim$6\,k-row table of (zone, hour) statistics with a \texttt{SortMergeJoin}, which
+    shuffles 1.3\,GB each; together they account for 96\% of all shuffle bytes.
+  \item \textbf{M3 joins before aggregating.} The zone lookup is joined to all 84.6\,M
+    trips before the \texttt{groupBy}, although the borough and zone only depend on
+    \texttt{PULocationID}.
+\end{enumerate}
+We also looked for the other symptoms listed in the assignment and did not find them: the
+\texttt{FileScan} reads only the 9 columns used (of 20), with \texttt{IsNotNull} filters pushed
+down; no stage spills to disk; and no stage has skewed tasks (the slowest task is at most
+2.0$\times$ the median in every stage longer than 0.5\,s, far from the 10$\times$ threshold).
+Finally, every 2019 file is a single Parquet row group of 7--8\,M rows, so the scan is fixed at
+12 tasks for 4 slots (3 waves) whatever \texttt{maxPartitionBytes} is.
+
+\section{Optimisation Study}
+\label{sec:optimisations}
+
+\subsection{Executor memory}
+\label{sec:opt-memory}
+\textit{Observation.} With the default 1\,GB executors the baseline runs, but every version that caches the cleaned trips fails with \texttt{OutOfMemoryError} while the
+cache is being built (\texttt{InMemoryRelation} / \texttt{MemoryStore.putIterator}), after 4
+retries of the same task. \textit{Hypothesis.} Each task caches a whole month (one row
+group, $\sim$7\,M rows) and two tasks share a 1\,GB heap. \textit{Change.}
+\texttt{--executor-memory 2g} for all versions, including the baseline (2 executors of
+2\,GB fit the 7.7\,GB Docker VM). \textit{Result.} The cached versions complete; this setting is
+used for every number in this report.
+
+\subsection{Caching the cleaned trips}
+\label{sec:opt-cache}
+\textit{Bottleneck.} Recomputation: 8 scans, 676.8\,M records read (Table~\ref{tab:baseline}).
+\textit{Hypothesis.} Persisting the cleaned trips once (\texttt{MEMORY\_AND\_DISK}) replaces 7
+of the 8 scans by reads of the cache. \textit{Change 1.} Persist the cleaned DataFrame as is.
+This \emph{fails}: the cached rows still hold all 20 columns and the executors run out of heap
+even with 2\,GB. \textit{Change 2.} Select the 8 columns the analyses use before persisting.
+\textit{Result.} The cache takes 1{,}463\,MB, all 12 blocks in memory, and the input is read
+once (84.6\,M records). The wall time drops from 341.7 to \textbf{207.9\,s (-39\%)}. M2 becomes
+slower (45.1$\rightarrow$92.4\,s) because it now pays for building the cache, while the
+following operations become 2--4$\times$ faster (M3 40.3$\rightarrow$22.6, O1
+85.1$\rightarrow$33.1, O4 83.1$\rightarrow$26.7, O3 76.4$\rightarrow$21.8\,s). Because
+Change~1 never completes, this measurement also includes the broadcast joins of
+Section~\ref{sec:opt-broadcast}, which were committed together with it.
+
+\subsection{Broadcast joins in O1, O4 and O3}
+\label{sec:opt-broadcast}
+\textit{Bottleneck.} \texttt{SortMergeJoin} of all trips with the (zone, hour) statistics:
+1{,}321\,MB (O1) and 1{,}285\,MB (O4) of shuffle. \textit{Hypothesis.} The statistics table has
+at most 265 zones $\times$ 24 hours rows, so sending it to every executor is cheaper than
+shuffling 84.6\,M trips. \textit{Change.} \texttt{sf.broadcast()} on the statistics side of the
+O1 and O4 joins, and on the bucket statistics of O3. \textit{Result.} Shuffle write drops to
+3.1\,MB in O1 and 1.5\,MB in O4; over the whole pipeline from 2{,}707 to 72\,MB (-97\%). The
+time gain is part of the -39\% above.
+
+\subsection{Aggregating before the join in M3}
+\label{sec:opt-m3}
+\textit{Bottleneck.} M3 joins the zone lookup to every trip before grouping by zone and month.
+\textit{Hypothesis.} Grouping by \texttt{(PULocationID, month)} first and joining the 265-row
+lookup to the $\sim$3\,k aggregated rows gives the same result with a much smaller join.
+\textit{Change.} Swap the order. (The window functions were also reordered so that the two
+windows partitioned by borough can share one exchange; on $\sim$3\,k rows any effect is
+negligible.)
+\textit{Result.} M3 goes from 22.6 to \textbf{13.6\,s (-40\%)}. The wall time goes from
+207.9 to 196.7\,s, which is within the run-to-run spread, so we only claim the per-operation
+gain.
+
+\subsection{Re-planning cached plans with AQE}
+\label{sec:opt-cachedaqe}
+O3 also caches its hourly counts, which are the output of a shuffle, and reads them three times
+(bucket statistics, current slots, 4-week lag). The pipeline enables
+\texttt{canChangeCachedPlanOutputPartitioning} (default \texttt{false}). \textit{Hypothesis.}
+We expected no effect, since the main cache comes straight from the Parquet scan, and measured a
+version without the setting. \textit{Result.} The hypothesis was wrong: without it the cached
+counts keep the default 200 shuffle partitions, because AQE may not coalesce a cached plan, and
+O3 runs 6 stages of 200 tasks of 30--100\,ms each (1{,}217 tasks instead of 44). O3 takes
+67.1\,s instead of 22.5\,s and the pipeline 236.8\,s instead of 199.4\,s. The setting is kept.
+
+\subsection{AQE settings that were already defaults}
+\label{sec:opt-aqe}
+The pipeline also set \texttt{adaptive.enabled}, \texttt{coalescePartitions},
+\texttt{skewJoin} and \texttt{localShuffleReader} to \texttt{true}, to handle skew. Spark~4.2
+already uses these values by default (checked with \texttt{spark.conf.get}), and the profile
+shows no skew, so they were removed. As expected the wall time does not change (196.7\,s before,
+199.4\,s after).
+
+\subsection{Summary}
+Table~\ref{tab:summary} summarises the cumulative effect. The final version reads the input
+once, shuffles 97\% fewer bytes and runs in 199.4\,s, \textbf{42\% faster} than the baseline.
+The largest remaining cost is the stage that scans, cleans and caches the input (about one
+third of the wall time): it is bounded by 12 non-splittable row groups on 4 slots.
+
+\begin{table}[h]
+  \caption{Optimisations, cumulative (2019, 2 workers, 2\,GB executors, median of 3 runs).}
+  \label{tab:summary}
+  \small
+  \begin{tabular}{lrrr}
+    \toprule
+    Version & Wall (s) & vs.\ baseline & Shuffle (MB) \\
+    \midrule
+    Baseline & 341.7 & -- & 2{,}707 \\
+    Cache all columns & OOM & -- & -- \\
+    Cache 8 columns + broadcast & 207.9 & -39.2\% & 73 \\
+    + M3 aggregate first & 196.7 & -42.4\% & 72 \\
+    + AQE defaults removed (final) & 199.4 & -41.6\% & 72 \\
+    \midrule
+    Final without cached-plan AQE & 236.8 & -30.7\% & 67 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Scalability Analysis}
+\label{sec:analysis}
+Both experiments use the final version, 2\,GB executors and medians of 3 interleaved runs
+(\texttt{scale-*} rows of \texttt{benchmark.csv}). To fit 3 workers, the Docker VM was given
+12\,GB instead of 7.7\,GB for these runs; with 2 workers and the full year the final version
+takes 197.2\,s, consistent with the 199.4\,s of Table~\ref{tab:summary}.
+
+\paragraph{Data volume.}
+With 2 workers we vary \texttt{--fraction} (Figure~\ref{fig:scaling}, left): 0.1, 0.2, 0.5 and
+1.0 of 2019 take 76.4, 86.2, 123.6 and 197.2\,s. Ten times more data costs only 2.6 times more
+time, because there is a large fixed part: the line through the first and last points is
+$T \approx 63 + 134 f$\,s. Part of it is the scan itself: sampling is applied after the read,
+so every run reads and decodes all 84.6\,M records (the scan stage takes 19.5\,s even at
+$f=0.1$). The rest is the cost of running 41 stages per run, most of them small. M3 and O3,
+which work on aggregated rows, grow least (M3 7.4$\rightarrow$14.2\,s, O3
+12.4$\rightarrow$22.4\,s); M2 (which builds the cache), O1 and O4 grow roughly with the data.
+
+\paragraph{Number of workers.}
+With the full year, 1 worker fails in all 3 runs with \texttt{OutOfMemoryError}: a single
+2\,GB executor has to hold the whole 1.46\,GB cache while it is still decoding Parquet pages.
+Adding workers therefore also adds the memory the cache needs, and at least 2 executors of 2\,GB
+are required. To compare 1, 2 and 3 workers under the same conditions we use $f=0.5$
+(Table~\ref{tab:workers}, Figure~\ref{fig:scaling}, right). With the full year, 3 workers take
+198.9\,s against 197.2\,s with 2, the same picture.
+
+\begin{table}[h]
+  \caption{Strong scaling (2019, $f=0.5$, 2 cores and 2\,GB per worker, median of 3 runs).
+  Scan = stage that reads, cleans and caches the input.}
+  \label{tab:workers}
+  \small
+  \begin{tabular}{rrrrrr}
+    \toprule
+    Workers & Slots & Wall (s) & Speedup & Efficiency & Scan task (s) \\
+    \midrule
+    1 & 2 & 139.7 & 1.00 & 100\% & 7.0 \\
+    2 & 4 & 123.6 & 1.13 & 57\% & 11.4 \\
+    3 & 6 & 123.9 & 1.13 & 38\% & 18.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[h]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[width=0.52\columnwidth, height=4.2cm, xlabel={Fraction of 2019},
+        ylabel={Wall time (s)}, xmin=0, xmax=1.05, ymin=0, ymax=220, grid=major,
+        legend style={font=\scriptsize, at={(0.02,0.98)}, anchor=north west}]
+      \addplot[mark=*, thick] coordinates {(0.1,76.4) (0.2,86.2) (0.5,123.6) (1.0,197.2)};
+      \addlegendentry{measured}
+      \addplot[dashed, domain=0:1] {63 + 134*x};
+      \addlegendentry{$63+134f$}
+    \end{axis}
+  \end{tikzpicture}%
+  \hfill
+  \begin{tikzpicture}
+    \begin{axis}[width=0.52\columnwidth, height=4.2cm, xlabel={Workers},
+        ylabel={Speedup}, xmin=0.8, xmax=3.2, ymin=0, ymax=3.2, xtick={1,2,3},
+        grid=major, legend style={font=\scriptsize, at={(0.02,0.98)}, anchor=north west}]
+      \addplot[mark=*, thick] coordinates {(1,1.00) (2,1.13) (3,1.13)};
+      \addlegendentry{measured}
+      \addplot[dashed, domain=1:3] {x};
+      \addlegendentry{ideal}
+    \end{axis}
+  \end{tikzpicture}
+  \caption{Left: wall time vs.\ input fraction (2 workers). Right: speedup vs.\ workers
+  ($f=0.5$).}
+  \label{fig:scaling}
+\end{figure}
+
+\paragraph{Why the speedup is far from ideal.}
+\begin{itemize}
+  \item \textbf{No extra hardware.} All workers are containers on the same 4-core laptop
+    and the same SSD, so a new worker adds task slots but no cores. This shows in the scan
+    stage: as the concurrent tasks go from 2 to 4 to 6, the median scan task goes from 7.0 to
+    11.4 to 18.0\,s, so the stage only goes from 46.0 to 38.4 to 37.3\,s. With 6 slots the
+    extra tasks run on hyperthreads of cores that are already busy.
+  \item \textbf{Fixed partitioning.} The scan has 12 tasks (one per row group), i.e.\ 6, 3 and
+    2 waves. Most of the other 40 stages have 1--12 small tasks and do not get faster with more
+    slots.
+  \item \textbf{Fixed overhead.} The driver plans and schedules 41 stages one operation after
+    another; this part, like the fixed 63\,s above, does not shrink with more workers.
+\end{itemize}
+The run-to-run spread at $f=0.5$ is about $\pm$5\%, so 2 and 3 workers are equal. On a real
+cluster, where each worker brings its own cores, disk and memory, we would expect the scan stage
+to scale up to 12 slots; going further would need more input splits (files with several row
+groups, or a \texttt{repartition} after the scan).

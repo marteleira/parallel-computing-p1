@@ -1,95 +1,146 @@
 \documentclass[sigconf]{acmart}
 \settopmatter{printacmref=false, printccs=false, printfolios=true}
 \renewcommand\footnotetextcopyrightpermission[1]{}
-
+\setcopyright{none}
+\setlength{\emergencystretch}{1.5em} % avoids overfull lines with long \texttt names
 
 \usepackage{booktabs} % For formal tables
-
-
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{xurl} % lets the long Spark configuration names break across lines
 
 
 \begin{document}
 \title{Large-Scale Analytics with Spark}
+\subtitle{Profiling and Optimising a PySpark Pipeline over the NYC Yellow Taxi Records}
 
+% TODO: confirm names, emails and affiliation
+\author{Miguel Lan\c{c}a}
+\email{TODO@domain.com}
 
-\author{Firstname Lastname}
-\email{email@domain.com}
-
-\author{Firstname Lastname}
-\email{email@domain.com}
+\author{Pedro Marteleira}
+\email{TODO@domain.com}
 
 
 \begin{abstract}
-This is a sample document created using the ACM LaTeX template. It is intended to be used as a starting point for creating your own documents. You can find more information about the ACM LaTeX template at \url{https://www.acm.org/publications/proceedings-template}.
-
-\footnote{This is an abstract footnote}
+This report describes the implementation, profiling and optimisation of a PySpark pipeline over
+the NYC TLC Yellow Taxi trip records, this pipeline ingests and cleans the raw records, calculates
+the temporal demand per borough and monthly statistics per zone with window functions, and
+implements three of the optional modules: fare anomalies, demand forecasting features and
+trip type classification, all experiments performed were conducted on a Spark~4.2 standalone cluster
+running with Docker on a single laptop, over the complete year of 2019 (with 84.6\,M records).
+Starting from a very simple baseline, we identified three bottlenecks in the query plans and event
+logs, namely the recomputation of the input, the shuffle of the whole trip table and a join placed
+before an aggregation, and then we addressed each one with a measured change, the final version of the pipeline is 42\%
+faster than the baseline and shuffles 97\% less data. The strong scaling, on the other hand, is
+limited by the environment itself, since every worker shares the same four physical cores of the machine.
 \end{abstract}
 
-% We no longer use \terms command
-%\terms{Theory}
-
-\keywords{ACM proceedings}
+\keywords{Apache Spark, PySpark, performance profiling, query optimisation, scalability}
 
 
 \maketitle
+\pagestyle{plain} % no "Conference'17" running headers
 
-\section{Section}
+\section{Introduction}
 
-Refer to \verb|acmart.pdf| \cite{veytsmanlatex} (\url{https://www.ctan.org/pkg/acmart}, \url{http://www.acm.org/publications/proceedings-template}) for additional examples and instructions.
+Apache Spark~\cite{zaharia2016spark} is nowadays the reference engine for the processing with
+large datasets, in great part due to the powerful DataFrame API of Spark SQL~\cite{armbrust2015sparksql},
+whose optimiser decides the most of the physical execution, however a correct Spark program is not
+necessarily an efficient one, since the same analysis may read the input several times, move gigabytes
+across the network or run hundreds of tiny tasks, depending on decisions that are not visible in
+the source code.
+In this work assingment we implemented a pipeline over the NYC TLC Yellow Taxi trip records~\cite{tlc},
+composed of the mandatory operations (M1 to M3) and three of the optional operations (O1, O3 and O4). We
+followed a strict methodology: first, a simple baseline thought AI agents, without caching, broadcast hints or
+configuration tuning, then the profiling of the baseline with the Spark UI, the physical plans
+and the event logs, and only after that the optimisations, one at a time, and each one measured against
+the previous version. 
 
-\subsection{Subsection}
-
-Lorem ipsum dolor sit amet, consectetur adipiscing elit.
-Sed aliquam nisl turpis, sit amet mollis leo accumsan vel.
-Donec semper turpis dui, a porttitor lorem tincidunt id.
-Phasellus gravida, purus non faucibus euismod, lectus tortor maximus elit, vestibulum lobortis purus turpis non urna.
-Fusce feugiat lectus ut massa molestie, non interdum augue porta.
-Nunc dapibus odio nec neque cursus, ut lacinia velit rutrum.
-Duis tempor nulla velit, sed pellentesque nunc imperdiet ut.
-Phasellus eget hendrerit neque.
-Suspendisse aliquet nulla id sem aliquam aliquam sed a orci.
-Duis sem est, hendrerit nec porttitor sit amet, maximus sed nulla.
-Suspendisse et dictum massa.
-Morbi non diam nec orci sodales eleifend.
-Etiam eget finibus purus, a malesuada ipsum.
-Nullam ac nisi nec elit faucibus aliquet.
-Nulla feugiat velit sed sodales eleifend.
-Donec orci nulla, viverra et mi in, sagittis egestas urna.
+Section~\ref{sec:design} describes the implementation,
+Sections~\ref{sec:baseline} and~\ref{sec:optimisations} the profiling and the optimisations,
+Section~\ref{sec:analysis} the scalability analysis, and Section~\ref{sec:conclusion} concludes.
 
 
+\section{Pipeline Design}
+\label{sec:design}
 
-\subsubsection{Subsubsection}
-
-Integer eleifend quam et odio iaculis, at elementum augue aliquam.
-Ut eu nibh nec urna finibus semper fermentum id purus.
-Aliquam eu sollicitudin libero.
-Cras viverra elit congue erat pulvinar, vitae vehicula tortor interdum.
-Aliquam commodo mi sapien, ullamcorper egestas velit tempor nec.
-Quisque sapien velit, fringilla non vulputate nec, lacinia in dui.
-Nam vestibulum volutpat ante, eu sodales enim tincidunt vel.
-Ut mollis elit quis bibendum eleifend.
-In laoreet tortor non odio ultrices mollis.
-Curabitur volutpat et risus quis fermentum.
-Morbi laoreet ligula eget orci consectetur, in dictum ipsum efficitur.
-Mauris nec neque ultricies, efficitur elit id, hendrerit nibh.
-Interdum et malesuada fames ac ante ipsum primis in faucibus.
+This pipeline is organised as one Python package per operation, and a single entry point only
+creates the session, calls each operation and writes its result, there are two rules that were followed
+throughout the code: firstly, the modules contain no actions (\texttt{count}, \texttt{collect},
+\texttt{show}): each operation ends in exactly one Parquet write and, since everything before it
+is lazy, the duration of that write is the duration of the operation, secondly, no Python User-defined-functions (UDFs)
+are used, so every expression can be optimised by Catalyst and no data has to be serialised
+between the JVM and the Python workers. The session time zone is set to UTC, to match the
+timestamps stored in local New York time, and are never shifted by the time zone of the executors.
 
 
+\paragraph{Ingestion and cleaning (M1)}
+The schema of the files is not stable across the years, since some columns change the case of their
+name (i.e.\ \texttt{airport\_fee}) or a change from an integer to double, and a single
+\texttt{spark.read.parquet} over all the files fails, for this reason the files are grouped by
+the physical schema (only the Parquet footers are read), each group is mapped onto a canonical schema
+of 20 columns by a case-insensitive name match followed by an explicit cast and the groups are
+combined with \texttt{unionByName}, the surcharges that did not exist in the earlier years are
+set to zero, since their absence means that they are not charged, and the files of 2009 to 2010,
+which have coordinates instead of location IDs, are discarded.
+A record is invalid when it violates at least one of five rules, null values counting as violations: non-positive fare or distance, 
+\texttt{passenger\_count} outside 1--6, drop-off not after the pickup,
+and pickup or drop-off location outside 1--263 (264 and 265 are the \emph{unknown} and
+\emph{outside of NYC} zones). The rules of the validations are kept as SQL conditions in a dictionary, so the
+filter and the per-rule statistics (one pass, behind a \texttt{--stats} flag) share the same definition. 
+In the year of 2019, about 80.8\,M of the 84.6\,M records (95.5\%) are valid.
 
-\paragraph{Paragraph}
+\paragraph{Temporal demand and zone statistics (M2 and M3)}
+The M2 joins the trips with the zone lookup on the pickup side and computes, per
+(\texttt{pickup\_borough}, \texttt{day\_of\_week}, \texttt{hour\_of\_day}), the number of trips
+and the mean fare, duration and distance and the output is partitioned by borough. 
+In the M3, a\emph{month} is a calendar month of a given year, so for example January 2019 and January 2020 are
+different.
+For the per (zone, month) we compute the mean and sample standard deviation of the fare and
+distance and the rank of the zone by volume inside its borough using window functions, the
+rolling 3-month trip share, i.e.\ the trips of the zone in the current and two previous months
+over those of its borough in the same period, and an anomaly flag raised when the volume deviates
+from the mean of the three \emph{previous} months by more than 1.5 standard deviations. The
+windows use \texttt{rangeBetween} over a month index instead of \texttt{rowsBetween}, so a \emph{month} without trips is not silently skipped.
 
-Nulla scelerisque id lectus a luctus.
-Curabitur quis dolor maximus, maximus erat ut, placerat justo.
-Donec auctor purus a lacus molestie maximus.
-Etiam porta ligula a quam mollis efficitur.
-Quisque vel sapien iaculis, pellentesque lorem nec, hendrerit lectus.
-Vestibulum egestas congue euismod.
-Praesent a tristique massa.
-Aliquam eget ante elit.
-Phasellus eget metus mi.
-Fusce nec rutrum mi.
-Pellentesque eu congue mi.
-Fusce eu ullamcorper est.
+\paragraph{Optional operations (O1, O3 and O4)}
+The O1 calculates the fare per mile of every trip and its mean and the standard deviation per (pickup zone,
+hour), a trip is anomalous when it exceeds the mean by more than $3\sigma$, these statistics are
+joined back to every trip, and the anomaly rate is aggregated by the day type (weekday or weekend),
+payment type and borough. 
+The O4 computes per (pickup zone, hour), the fraction of airport trips
+(\texttt{RatecodeID} 2 or 3), of the negotiated fares (\texttt{RatecodeID} 5) and of group trips
+(4 or more passengers), and labels the bucket as \emph{transit}, \emph{commercial} or
+\emph{residential} when the respective fraction reaches a configurable threshold, or as \emph{mixed} otherwise.
+The thresholds (0.10, 0.35 and 0.12) are close to the 90th
+percentile of each fraction in January 2019, so the top 10\% of the buckets receive
+each label, the label is joined back to every trip, and the trips are aggregated per zone type
+and month. 
+Finally, the O3 counts the trips per (zone, date, hour) and calculates the mean and variance
+of these counts per (zone, day of week, hour) over the loaded period, the count of four weeks
+before is obtained through a self-join with the date shifted by 28 days (a left join, since the
+first four weeks have no lag), the slots whose count is more than twice the bucket mean are
+flagged as demand spikes, and each slot is annotated with the \texttt{service\_zone} of its zone,
+the hours without any trips haven't any row, which is a simplification since the bucket means of the quiet zones are
+slightly overestimated.
+
+\input{sections/results}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+The pipeline produces all the required outputs over a year of data in 199\,s, against 342\,s for
+the baseline, the largest gains did not come from configuration tuning, but from reading the
+physical plans and applying the optimizations such as:
+caching only the columns that are used, broadcasting the small side of a join
+before the trip side is shuffled, and aggregating before joining, this should also be noted that
+two of our assumptions were contradicted by the measurements, namely that a cache built from a
+parquet scan would not need AQE to re-plan its partitioning, and that more workers would reduce
+the execution time, both showed that in Spark, a change is only an optimisation once it is
+measured. 
+As future work, the same experiments should be repeated on a real cluster and over the
+full dataset period, where the scan stage would be no longer be limited by the shared CPU cores.
 
 
 \bibliographystyle{acm}

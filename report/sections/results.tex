@@ -50,8 +50,11 @@ The event logs and plans point to three bottlenecks:
     filter run 8 times (once in M2 and M3, twice in O1, O4 and O3): 676.8\,M records are read
     for an 84.6\,M-record input.
   \item \textbf{Shuffling the whole trip table.} O1 and O4 join every trip back to a
-    $\sim$6\,k-row table of (zone, hour) statistics with a \texttt{SortMergeJoin}, which
-    shuffles 1.3\,GB each; together they account for 96\% of all shuffle bytes.
+    $\sim$6\,k-row table of (zone, hour) statistics. The initial plan is a
+    \texttt{SortMergeJoin}, so both sides are shuffled; AQE turns it into a
+    \texttt{BroadcastHashJoin} at runtime, but only after the trip side (80.8\,M rows) has
+    already been written to the shuffle: 1.3\,GB each, 96\% of all shuffle bytes
+    (Figures~\ref{fig:baseline-plans} and~\ref{fig:baseline-exchange}).
   \item \textbf{M3 joins before aggregating.} The zone lookup is joined to all 84.6\,M
     trips before the \texttt{groupBy}, although the borough and zone only depend on
     \texttt{PULocationID}.
@@ -62,6 +65,31 @@ down; no stage spills to disk; and no stage has skewed tasks (the slowest task i
 2.0$\times$ the median in every stage longer than 0.5\,s, far from the 10$\times$ threshold).
 Finally, every 2019 file is a single Parquet row group of 7--8\,M rows, so the scan is fixed at
 12 tasks for 4 slots (3 waves) whatever \texttt{maxPartitionBytes} is.
+
+\begin{figure*}[t]
+  \centering
+  \begin{minipage}[t]{0.42\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/baseline-o1-initial.png}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.55\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/baseline-o1-final.png}
+  \end{minipage}
+  \caption{Baseline O1 plan in the Spark UI. Left: initial plan, a \texttt{SortMergeJoin} with
+  an \texttt{Exchange} on both sides and two \texttt{Scan parquet} (no cache). Right: final plan
+  after AQE, the join became a \texttt{BroadcastHashJoin}, but the trip side had already been
+  shuffled (\texttt{ShuffleQueryStage (7)}, 3.6\,GiB, 80.8\,M rows).}
+  \label{fig:baseline-plans}
+\end{figure*}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.9\columnwidth]{figures/baseline-o1-exchange.png}
+  \caption{Metrics of the trip-side \texttt{Exchange} in the baseline O1: 80.8\,M records and
+  1{,}317.8\,MiB written to the shuffle, in 200 partitions.}
+  \label{fig:baseline-exchange}
+\end{figure}
 
 \section{Optimisation Study}
 \label{sec:optimisations}
@@ -93,13 +121,27 @@ Section~\ref{sec:opt-broadcast}, which were committed together with it.
 
 \subsection{Broadcast joins in O1, O4 and O3}
 \label{sec:opt-broadcast}
-\textit{Bottleneck.} \texttt{SortMergeJoin} of all trips with the (zone, hour) statistics:
-1{,}321\,MB (O1) and 1{,}285\,MB (O4) of shuffle. \textit{Hypothesis.} The statistics table has
-at most 265 zones $\times$ 24 hours rows, so sending it to every executor is cheaper than
-shuffling 84.6\,M trips. \textit{Change.} \texttt{sf.broadcast()} on the statistics side of the
+\textit{Bottleneck.} Join of all trips with the (zone, hour) statistics: 1{,}321\,MB (O1) and
+1{,}285\,MB (O4) of shuffle. AQE already converts the join to a broadcast at runtime, but too
+late: the statistics are an aggregate, so their size is only known after the stage that
+computes them, and the trip side is shuffled in the same wave. \textit{Hypothesis.} The
+statistics table has at most 265 zones $\times$ 24 hours rows, so broadcasting it from the
+start (in the static plan) avoids shuffling the trips at all. \textit{Change.} \texttt{sf.broadcast()} on the statistics side of the
 O1 and O4 joins, and on the bucket statistics of O3. \textit{Result.} Shuffle write drops to
 3.1\,MB in O1 and 1.5\,MB in O4; over the whole pipeline from 2{,}707 to 72\,MB (-97\%). The
-time gain is part of the -39\% above.
+time gain is part of the -39\% above. Figure~\ref{fig:final-plan} shows the new O1 plan: the
+trips come from the cache (\texttt{InMemoryTableScan}) and go straight into the
+\texttt{BroadcastHashJoin}, with no \texttt{Exchange} in between.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/final-o1-plan.png}
+  \caption{Final O1 plan: the trips are read from the cache (\texttt{TableCacheQueryStage},
+  \texttt{InMemoryTableScan}); the \texttt{Scan parquet} below \texttt{InMemoryRelation} is
+  the definition of the cache, not a new read. The only shuffles are of aggregated rows
+  (3.9\,MiB and 43\,KiB).}
+  \label{fig:final-plan}
+\end{figure}
 
 \subsection{Aggregating before the join in M3}
 \label{sec:opt-m3}
@@ -121,8 +163,17 @@ O3 also caches its hourly counts, which are the output of a shuffle, and reads t
 We expected no effect, since the main cache comes straight from the Parquet scan, and measured a
 version without the setting. \textit{Result.} The hypothesis was wrong: without it the cached
 counts keep the default 200 shuffle partitions, because AQE may not coalesce a cached plan, and
-O3 runs 6 stages of 200 tasks of 30--100\,ms each (1{,}217 tasks instead of 44). O3 takes
-67.1\,s instead of 22.5\,s and the pipeline 236.8\,s instead of 199.4\,s. The setting is kept.
+O3 runs 6 stages of 200 tasks of 30--100\,ms each (1{,}217 tasks instead of 44,
+Figure~\ref{fig:o3-stages}). O3 takes 67.1\,s instead of 22.5\,s and the pipeline 236.8\,s
+instead of 199.4\,s. The setting is kept.
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/no-cached-aqe-o3-stages.png}
+  \caption{O3 stages without \texttt{canChangeCachedPlanOutputPartitioning}: 200 tasks per
+  stage for 5.6\,MiB of input ($\sim$28\,KB per task).}
+  \label{fig:o3-stages}
+\end{figure*}
 
 \subsection{AQE settings that were already defaults}
 \label{sec:opt-aqe}
